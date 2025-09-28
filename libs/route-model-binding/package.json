@@ -1,16 +1,16 @@
 {
   "name": "@neoma/route-model-binding",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Laravel-inspired route model binding for NestJS - automatically resolve database entities from route parameters",
   "author": "Shipdventures",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shipdventures/neoma-route-model-binding"
+    "url": "https://github.com/shipdventures/route-model-binding-nestjs"
   },
   "bugs": {
-    "url": "https://github.com/shipdventures/neoma-route-model-binding/issues"
+    "url": "https://github.com/shipdventures/route-model-binding-nestjs/issues"
   },
-  "homepage": "https://github.com/shipdventures/neoma-route-model-binding#readme",
+  "homepage": "https://github.com/shipdventures/route-model-binding-nestjs#readme",
   "keywords": [
     "nestjs",
     "route-model-binding",
