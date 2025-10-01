@@ -15,7 +15,7 @@
     "test:e2e": "node node_modules/.bin/jest --config ./specs/jest-e2e.json --watch --runInBand"
   },
   "dependencies": {
-    "@neoma/route-model-binding": "file:./libs/route-model-binding/dist",
+    "@neoma/route-model-binding": "file:./libs/route-model-binding",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",

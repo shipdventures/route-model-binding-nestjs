@@ -55,18 +55,22 @@ This library requires the following peer dependencies:
 
 ## Quick Start
 
-### 1. Register the middleware in your module
+### 1. Import the RouteModelBindingModule
 
 ```typescript
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common"
 import { TypeOrmModule } from "@nestjs/typeorm"
-import { RouteModelBindingMiddleware } from "@neoma/route-model-binding"
+import { 
+  RouteModelBindingModule, 
+  RouteModelBindingMiddleware 
+} from "@neoma/route-model-binding"
 
 @Module({
   imports: [
     TypeOrmModule.forRoot({
       // your TypeORM configuration
     }),
+    RouteModelBindingModule.forRoot(), // Add this line
   ],
   controllers: [AppController],
 })
@@ -124,27 +128,39 @@ export class AppController {
 
 ## API Reference
 
+### RouteModelBindingModule
+
+The module that provides route model binding functionality.
+
+```typescript
+RouteModelBindingModule.forRoot(config?: RouteModelBindingConfig)
+```
+
+**Parameters:**
+- `config` (optional) - Configuration object for customizing resolution behavior
+
+**Example:**
+```typescript
+import { RouteModelBindingModule } from "@neoma/route-model-binding"
+
+@Module({
+  imports: [
+    RouteModelBindingModule.forRoot({
+      defaultResolver: ({ id }) => ({ id, deletedAt: null }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
 ### RouteModelBindingMiddleware
 
 The middleware that handles the automatic resolution of entities. You must specify the routes that contain model parameters.
 
 ```typescript
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common"
-import { TypeOrmModule } from "@nestjs/typeorm"
 import { RouteModelBindingMiddleware } from "@neoma/route-model-binding"
 
-@Module({
-  imports: [
-    TypeOrmModule.forRoot({
-      type: "sqlite",
-      database: ":memory:",
-      entities: ["src/**/*.entity.ts"],
-    }),
-  ],
-  controllers: [
-    /* your controllers */
-  ],
-})
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(RouteModelBindingMiddleware).forRoutes(
@@ -180,20 +196,80 @@ getArticle(@RouteModel('article') article: Article) {
 
 ## Advanced Usage
 
-### Custom Repository Queries
+### Custom Resolvers
 
-By default, the middleware performs a simple `findOne({ where: { id } })` query. If you need custom query logic (e.g., including relations), you'll need to handle that in your controller after receiving the base entity.
+You can customize how entities are resolved by providing a default resolver function. This is useful for implementing features like soft delete filtering, multi-tenancy, or custom query logic.
 
 ```typescript
-@Get('/users/:user/profile')
-async getUserProfile(@RouteModel('user') user: User) {
-  // Load additional relations as needed
-  const userWithRelations = await this.userRepository.findOne({
-    where: { id: user.id },
-    relations: ['profile', 'preferences']
-  })
-  return userWithRelations
+import { RouteModelBindingModule } from "@neoma/route-model-binding"
+
+@Module({
+  imports: [
+    RouteModelBindingModule.forRoot({
+      // Custom default resolver for all entities
+      defaultResolver: ({ id }) => ({
+        id,
+        deletedAt: null, // Only find non-soft-deleted entities
+      }),
+    }),
+  ],
+})
+export class AppModule implements NestModule {
+  // ... middleware configuration
 }
+```
+
+#### Resolver Function
+
+The resolver function receives a context object and returns a TypeORM where clause:
+
+```typescript
+type ResolverFunction = (context: ResolverContext) => FindOptionsWhere<any> | Promise<FindOptionsWhere<any>>
+
+interface ResolverContext {
+  id: string                    // The route parameter value
+  req: Request                  // Express request object  
+  routeModels: Record<string, any>  // Previously resolved models
+  paramName: string             // The parameter name (e.g., 'user')
+}
+```
+
+#### Common Use Cases
+
+**Soft Delete Support:**
+```typescript
+RouteModelBindingModule.forRoot({
+  defaultResolver: ({ id }) => ({
+    id,
+    deletedAt: null, // Exclude soft-deleted entities
+  }),
+})
+```
+
+**Multi-tenancy:**
+```typescript
+RouteModelBindingModule.forRoot({
+  defaultResolver: ({ id, req }) => ({
+    id,
+    tenantId: req.user?.tenantId, // Scope to current tenant
+  }),
+})
+```
+
+**Complex Authorization:**
+```typescript
+RouteModelBindingModule.forRoot({
+  defaultResolver: async ({ id, req, routeModels }) => {
+    return {
+      id,
+      [Op.or]: [
+        { ownerId: req.user?.id },
+        { public: true },
+        { teamId: routeModels.team?.id }, // Access to previously resolved models
+      ],
+    }
+  },
+})
 ```
 
 ### Error Handling
@@ -233,9 +309,10 @@ If you're coming from Laravel, here's how this library compares:
 | ---------------------------------------- | ------------------------------------ |
 | `Route::get('/users/{user}', ...)`       | `@Get('/users/:user')`               |
 | Automatic injection via type-hinting     | Use `@RouteModel('user')` decorator  |
-| Customizable via `resolveRouteBinding()` | Custom logic in controller (for now) |
-| Soft-deleted model handling              | Not yet implemented                  |
-| Custom binding keys                      | Uses `id` field by default           |
+| Customizable via `resolveRouteBinding()` | Custom resolvers via `forRoot()`     |
+| Soft-deleted model handling              | ✅ Via custom resolvers              |
+| Custom binding keys                      | ✅ Via custom resolvers              |
+| Multi-tenancy support                    | ✅ Via custom resolvers              |
 
 ## Contributing
 
@@ -259,13 +336,15 @@ npm run lint
 
 ## Roadmap
 
+- [x] Support for custom binding queries (via default resolver)
+- [x] Soft-delete support (via custom resolvers)
+- [x] Custom resolution logic (via default resolver)
+- [ ] Per-parameter resolvers (entity-specific resolution)
 - [ ] Support for custom binding keys (e.g., resolve by slug instead of id)
-- [ ] Support for customer binding queries
-- [ ] Soft-delete support
-- [ ] Custom resolution logic per entity
 - [ ] Route model binding for non-TypeORM ORMs
 - [ ] Nested relationship loading
 - [ ] Optional bindings (don't throw 404)
+- [ ] Custom error handling per resolver
 
 ## License
 

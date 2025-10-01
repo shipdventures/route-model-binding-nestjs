@@ -1,7 +1,10 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common"
 import { TypeOrmModule } from "@nestjs/typeorm"
 import { AppController } from "./app.controller"
-import { RouteModelBindingMiddleware } from "@neoma/route-model-binding"
+import {
+  RouteModelBindingModule,
+  RouteModelBindingMiddleware,
+} from "@neoma/route-model-binding"
 
 @Module({
   imports: [
@@ -11,6 +14,7 @@ import { RouteModelBindingMiddleware } from "@neoma/route-model-binding"
       entities: ["src/**/*.entity.ts"],
       synchronize: true,
     }),
+    RouteModelBindingModule.forRoot(),
   ],
   controllers: [AppController],
 })

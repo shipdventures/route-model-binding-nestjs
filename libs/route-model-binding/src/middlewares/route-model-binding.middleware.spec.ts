@@ -8,6 +8,8 @@ import { post as postEntity } from "fixtures/models/post"
 import { user as userEntity } from "fixtures/models/user"
 import { Post } from "src/post.entity"
 import { User } from "src/user.entity"
+import { ROUTE_MODEL_BINDING_CONFIG } from "../constants/injection-tokens"
+import { RouteModelBindingConfig } from "../interfaces/route-model-binding-config.interface"
 import { RouteModelBindingMiddleware } from "./route-model-binding.middleware"
 
 describe("RouteModelBindingMiddleware", () => {
@@ -16,7 +18,9 @@ describe("RouteModelBindingMiddleware", () => {
   const nonExistentId = crypto.randomUUID()
   let middleware: RouteModelBindingMiddleware
 
-  beforeEach(async () => {
+  const createMiddleware = async (
+    config?: RouteModelBindingConfig,
+  ): Promise<RouteModelBindingMiddleware> => {
     const datasource = managedDatasourceInstance()
     await datasource
       .getRepository(User)
@@ -31,14 +35,27 @@ describe("RouteModelBindingMiddleware", () => {
       .getRepository(Post)
       .save([postEntity.entity(), postEntity.entity(), post])
 
+    // Provide default config if none specified
+    const defaultConfig: RouteModelBindingConfig = {
+      defaultResolver: ({ id }) => ({ id }),
+    }
+
     const app: TestingModule = await Test.createTestingModule({
       providers: [
         RouteModelBindingMiddleware,
         { provide: getDataSourceToken(), useValue: datasource },
+        {
+          provide: ROUTE_MODEL_BINDING_CONFIG,
+          useValue: config || defaultConfig,
+        },
       ],
     }).compile()
 
-    middleware = app.get(RouteModelBindingMiddleware)
+    return app.get(RouteModelBindingMiddleware)
+  }
+
+  beforeEach(async () => {
+    middleware = await createMiddleware()
   })
 
   describe(`Given a User Entity exists with the id ${user.id}`, () => {
@@ -294,6 +311,121 @@ describe("RouteModelBindingMiddleware", () => {
         )
 
         return Promise.all(promises)
+      })
+    })
+  })
+
+  describe("Custom Default Resolver Functionality", () => {
+    describe("When the middleware is configured with a custom default resolver", () => {
+      const userEntities = [
+        userEntity.entity(),
+        userEntity.entity(),
+        userEntity.entity(),
+      ]
+      const postEntityies = [
+        postEntity.entity(),
+        postEntity.entity(),
+        postEntity.entity(),
+      ]
+      let middleware: RouteModelBindingMiddleware
+
+      beforeEach(async () => {
+        await managedDatasourceInstance().getRepository(User).save(userEntities)
+        await managedDatasourceInstance()
+          .getRepository(Post)
+          .save(postEntityies)
+
+        middleware = await createMiddleware({
+          defaultResolver: ({ paramName }) => {
+            if (paramName === "user") {
+              return { id: userEntities[2].id }
+            } else if (paramName === "post") {
+              return { id: postEntityies[0].id }
+            }
+            throw new Error(`No resolver for param ${paramName}`)
+          },
+        })
+      })
+
+      it.only("should use the default resolver to load any models", (done) => {
+        const request = express.request({
+          params: { user: crypto.randomUUID(), post: crypto.randomUUID() },
+        }) as Request
+
+        void middleware.use(request, express.response() as Response, () => {
+          expect(request).toHaveProperty("routeModels.user", userEntities[2])
+          expect(request).toHaveProperty("routeModels.post", postEntityies[0])
+          done()
+        })
+      })
+    })
+
+    describe("Soft Delete Support", () => {
+      it("should filter out soft-deleted entities when resolver includes deletedAt: null", async () => {
+        // Create a soft-deleted user
+        const softDeletedUser = userEntity.entity()
+        const datasource = managedDatasourceInstance()
+        await datasource.getRepository(User).save({
+          ...softDeletedUser,
+          deletedAt: new Date(),
+        })
+
+        const customMiddleware = await createMiddleware({
+          defaultResolver: ({ id }) => ({
+            id,
+            deletedAt: null, // Only find non-deleted entities
+          }),
+        })
+
+        const request = express.request({
+          params: { user: softDeletedUser.id },
+        }) as Request
+
+        await expect(
+          customMiddleware.use(
+            request,
+            express.response() as Response,
+            () => {},
+          ),
+        ).rejects.toThrowEquals(
+          new NotFoundException(
+            `Could not find User with id ${softDeletedUser.id}`,
+          ),
+        )
+      })
+    })
+
+    describe("Async Resolver Support", () => {
+      it("should work with async resolvers", async () => {
+        const asyncResolver = jest
+          .fn()
+          .mockImplementation(
+            async ({ id }) =>
+              new Promise((resolve) => setTimeout(() => resolve({ id }), 10)),
+          )
+
+        const customMiddleware = await createMiddleware({
+          defaultResolver: asyncResolver,
+        })
+
+        const request = express.request({
+          params: { user: user.id },
+        }) as Request
+
+        await customMiddleware.use(
+          request,
+          express.response() as Response,
+          () => {},
+        )
+
+        expect(asyncResolver).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: user.id,
+            req: request,
+            paramName: "user",
+          }),
+        )
+        expect(request).toHaveProperty("routeModels.user", user)
       })
     })
   })

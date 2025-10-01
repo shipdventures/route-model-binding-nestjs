@@ -1,4 +1,9 @@
-import { Column, Entity, PrimaryGeneratedColumn } from "typeorm"
+import {
+  Column,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from "typeorm"
 
 @Entity()
 export class Post {
@@ -7,4 +12,7 @@ export class Post {
 
   @Column()
   public content: string
+
+  @DeleteDateColumn()
+  public deletedAt?: Date | null
 }

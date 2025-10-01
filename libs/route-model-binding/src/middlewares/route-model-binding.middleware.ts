@@ -1,7 +1,12 @@
-import { NestMiddleware, NotFoundException } from "@nestjs/common"
+import { Inject, NestMiddleware, NotFoundException } from "@nestjs/common"
 import { InjectDataSource } from "@nestjs/typeorm"
 import { NextFunction, Request, Response } from "express"
 import { DataSource } from "typeorm"
+import { ROUTE_MODEL_BINDING_CONFIG } from "../constants/injection-tokens"
+import {
+  ResolverContext,
+  RouteModelBindingConfig,
+} from "../interfaces/route-model-binding-config.interface"
 
 /**
  * The key under which route models are stored in the request object.
@@ -19,8 +24,13 @@ export class RouteModelBindingMiddleware implements NestMiddleware {
    * Creates an instance of RouteModelBindingMiddleware.
    *
    * @param ds The data source to use for database operations.
+   * @param config Configuration for route model binding behavior.
    */
-  public constructor(@InjectDataSource() private readonly ds: DataSource) {}
+  public constructor(
+    @InjectDataSource() private readonly ds: DataSource,
+    @Inject(ROUTE_MODEL_BINDING_CONFIG)
+    private readonly config: RouteModelBindingConfig,
+  ) {}
 
   /**
    * Middleware function to bind route parameters to model instances.
@@ -44,6 +54,9 @@ export class RouteModelBindingMiddleware implements NestMiddleware {
   ): Promise<void> {
     const routeModelKeys = Object.keys(req.params)
 
+    // Initialize storage for route models
+    req[STORAGE_KEY] = req[STORAGE_KEY] || {}
+
     for (const key of routeModelKeys) {
       const lowerKey = key.toLowerCase()
       const repo = this.ds.getRepository(lowerKey)
@@ -56,8 +69,17 @@ export class RouteModelBindingMiddleware implements NestMiddleware {
         )
       }
 
+      // Build the resolver context
+      const context: ResolverContext = {
+        id,
+        req,
+        routeModels: req[STORAGE_KEY],
+        paramName: key,
+      }
+
+      const where = await this.config.defaultResolver(context)
       const entity = await repo.findOne({
-        where: { id },
+        where,
       })
 
       if (!entity) {
@@ -66,7 +88,6 @@ export class RouteModelBindingMiddleware implements NestMiddleware {
         )
       }
 
-      req[STORAGE_KEY] = req[STORAGE_KEY] || {}
       req[STORAGE_KEY][key] = entity
     }
 
